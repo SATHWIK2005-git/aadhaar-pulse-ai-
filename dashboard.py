@@ -10,7 +10,7 @@ st.title("🇮🇳 Aadhaar Pulse AI+ — National Digital Inclusion & Service In
 
 # ---------- Load Data ----------
 data = pd.read_csv("Aadhaar_Intelligence_Indicators.csv")
-daily = pd.read_csv("UADIA_AI_Dataset.csv")
+daily = pd.read_csv("https://drive.google.com/uc?id=1dHESP6vfUTxUFKZgJfuHVVVtpIAF_0jk")
 daily["date"] = pd.to_datetime(daily["date"], dayfirst=True)
 
 with open("india_states.geojson") as f:
@@ -114,3 +114,4 @@ with st.expander("How AI Works"):
 # ---------- Auto Refresh ----------
 time.sleep(10)
 st.rerun()
+
