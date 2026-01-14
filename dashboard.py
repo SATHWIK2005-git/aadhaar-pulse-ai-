@@ -23,7 +23,7 @@ NUM_COLS = ["rush_index", "digital_literacy_score", "migration_score"]
 for c in NUM_COLS:
     data[c] = pd.to_numeric(data[c], errors="coerce")
 
-# Normalize state names
+# Normalize states
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
@@ -34,8 +34,8 @@ with open("india_states.geojson", "r", encoding="utf-8") as f:
     india_geo = json.load(f)
 
 VALID_REGIONS = set(state_map.values())
-
 filtered_features = []
+
 for feature in india_geo["features"]:
     name = feature["properties"].get("NAME_1")
 
@@ -118,17 +118,13 @@ st.plotly_chart(fig, width="stretch")
 # =========================
 st.subheader("📊 State-Level Indicators")
 
-selected_state = st.selectbox(
-    "Select State",
-    sorted(state_data["state"].unique())
-)
-
+selected_state = st.selectbox("Select State", sorted(state_data["state"].unique()))
 state_row = state_data[state_data["state"] == selected_state].iloc[0]
 
-sc1, sc2, sc3 = st.columns(3)
-sc1.metric("Rush Index", round(state_row["rush_index"], 2))
-sc2.metric("Migration Index", round(state_row["migration_score"], 2))
-sc3.metric("Digital Literacy", round(state_row["digital_literacy_score"], 2))
+s1, s2, s3 = st.columns(3)
+s1.metric("Rush Index", round(state_row["rush_index"], 2))
+s2.metric("Migration Index", round(state_row["migration_score"], 2))
+s3.metric("Digital Literacy", round(state_row["digital_literacy_score"], 2))
 
 # =========================
 # DISTRICT LEVEL TABLE
@@ -139,89 +135,105 @@ district_view = data[data["state"] == selected_state]
 
 st.dataframe(
     district_view[
-        [
-            "district",
-            "rush_index",
-            "migration_score",
-            "digital_literacy_score",
-            "fraud_category",
-            "fraud_risk_score",
-            "recommended_action"
-        ]
+        ["district", "rush_index", "migration_score",
+         "digital_literacy_score", "fraud_risk_score",
+         "fraud_category", "recommended_action"]
     ].sort_values("fraud_risk_score", ascending=False),
     use_container_width=True
 )
 
-# =====================================================
-# 🔵 NEW SECTION 1: NATIONAL STATE-WISE BAR GRAPH
-# =====================================================
-st.subheader("📊 National State-wise Indicator Comparison")
+# =========================
+# 📊 STATE-WISE BAR GRAPH (NEW)
+# =========================
+st.subheader("📊 State-wise Aadhaar Indicators (All India)")
 
-state_bar = state_data.melt(
-    id_vars="state",
-    value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
-    var_name="Indicator",
-    value_name="Value"
-)
-
-fig_state_bar = px.bar(
-    state_bar,
+state_bar = px.bar(
+    state_data,
     x="state",
-    y="Value",
-    color="Indicator",
-    title="State-wise Aadhaar Pressure, Literacy, Migration & Fraud Risk",
-    barmode="group"
-)
-st.plotly_chart(fig_state_bar, use_container_width=True)
-
-# =====================================================
-# 🔵 NEW SECTION 2: DISTRICT-WISE BAR GRAPH
-# =====================================================
-st.subheader("📊 District-wise Risk Profile (Selected State)")
-
-district_bar = district_view.melt(
-    id_vars="district",
-    value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
-    var_name="Indicator",
-    value_name="Value"
+    y=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+    barmode="group",
+    title="State-wise Aadhaar Indicators Comparison",
 )
 
-fig_district_bar = px.bar(
-    district_bar,
+state_bar.update_layout(xaxis_tickangle=-45)
+st.plotly_chart(state_bar, width="stretch")
+
+# =========================
+# 📊 DISTRICT-WISE BAR GRAPH (NEW)
+# =========================
+st.subheader("📊 District-wise Aadhaar Indicators")
+
+district_bar = px.bar(
+    district_view,
     x="district",
-    y="Value",
-    color="Indicator",
-    title=f"{selected_state} — District-wise Aadhaar Risk & Activity",
-    barmode="group"
+    y=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+    barmode="group",
+    title=f"District-wise Indicators — {selected_state}",
 )
 
-st.plotly_chart(fig_district_bar, use_container_width=True)
+district_bar.update_layout(xaxis_tickangle=-45)
+st.plotly_chart(district_bar, width="stretch")
 
-# =====================================================
-# 🧠 EXPLAINABLE AI
-# =====================================================
-with st.expander("🧠 How the AI Works (Explainable & Policy-Safe)"):
+# =========================
+# 🧠 EXPLAINABLE AI SECTION (NEW)
+# =========================
+with st.expander("🧠 How AI Works (Explainable AI)"):
     st.markdown("""
-**Rush Index**  
-Measures Aadhaar service load.  
-Higher value → more enrolments & updates per active day.
+### 🔹 Rush Index
+Measures Aadhaar service pressure  
+**High → staff overload / long queues**
 
-**Migration Index**  
+### 🔹 Migration Score
 Adult Aadhaar ÷ Child Aadhaar  
-Higher value → labour migration / urban influx.
+**High → labour migration / urban inflow**
 
-**Digital Literacy Score**  
+### 🔹 Digital Literacy Score
 Updates ÷ Enrolments  
-Lower value → citizens struggle with digital updates.
+**Low → digital exclusion**
 
-**Fraud Risk Score (Explainable AI)**  
-0.4 × Rush + 0.4 × Migration + 0.2 × (1 − Literacy)
+### 🔹 Fraud Risk Score
+**0.4 × Rush + 0.4 × Migration + 0.2 × (1 − Literacy)**
 
-**Why this matters**  
-• No biometric or personal data used  
-• Fully explainable & policy compliant  
-• Supports UIDAI planning & fraud prevention
+Used for:
+- Duplicate Aadhaar detection
+- Cross-state misuse
+- Identity fraud prevention
 """)
+
+# =========================
+# 📄 PDF REPORT (UNCHANGED)
+# =========================
+def generate_fraud_report(df):
+    fname = f"UIDAI_Fraud_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    c = canvas.Canvas(fname, pagesize=A4)
+    w, h = A4
+    y = h - 40
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, y, "UIDAI – Aadhaar Fraud Intelligence Report")
+    y -= 30
+
+    c.setFont("Helvetica", 10)
+    c.drawString(40, y, f"Generated on: {datetime.now()}")
+    y -= 30
+
+    for _, r in df[df["fraud_category"] != "Normal"].head(25).iterrows():
+        c.drawString(
+            40, y,
+            f"{r['state']} | {r['district']} | {r['fraud_category']} | Risk={r['fraud_risk_score']:.2f}"
+        )
+        y -= 12
+        if y < 80:
+            c.showPage()
+            y = h - 40
+
+    c.save()
+    return fname
+
+if st.button("📄 Generate UIDAI Fraud Report (PDF)"):
+    pdf = generate_fraud_report(data)
+    with open(pdf, "rb") as f:
+        st.download_button("⬇️ Download Report", f, file_name=pdf)
 
 # =========================
 # AUTO REFRESH
