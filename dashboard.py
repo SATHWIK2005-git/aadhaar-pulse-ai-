@@ -11,11 +11,7 @@ from state_mapper import state_map
 # =========================
 # PAGE CONFIG
 # =========================
-st.set_page_config(
-    page_title="Aadhaar Pulse AI+",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Aadhaar Pulse AI+", layout="wide")
 st.title("🇮🇳 Aadhaar Pulse AI+ — National Fraud & Service Intelligence")
 
 # =========================
@@ -23,41 +19,37 @@ st.title("🇮🇳 Aadhaar Pulse AI+ — National Fraud & Service Intelligence")
 # =========================
 data = pd.read_csv("Aadhaar_Intelligence_Indicators.csv")
 
-NUM_COLS = ["rush_index", "digital_literacy_score", "migration_score"]
-for col in NUM_COLS:
-    data[col] = pd.to_numeric(data[col], errors="coerce")
+num_cols = ["rush_index", "digital_literacy_score", "migration_score"]
+for c in num_cols:
+    data[c] = pd.to_numeric(data[c], errors="coerce")
 
-# Normalize state names (dataset)
+# Normalize state names
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
+VALID_STATES = set(state_map.values())
+
 # =========================
-# LOAD & FIX GEOJSON
+# LOAD & FILTER GEOJSON
 # =========================
 with open("india_states.geojson", "r", encoding="utf-8") as f:
     india_geo = json.load(f)
 
-VALID_REGIONS = set(state_map.values())
-
-fixed_features = []
+filtered_features = []
 for feature in india_geo["features"]:
     name = feature["properties"].get("NAME_1")
 
-    # 🔧 Legacy name fixes
     if name == "Orissa":
         name = "Odisha"
-    if name == "Uttaranchal":
-        name = "Uttarakhand"
+        feature["properties"]["NAME_1"] = "Odisha"
 
-    feature["properties"]["NAME_1"] = name
+    if name in VALID_STATES:
+        filtered_features.append(feature)
 
-    if name in VALID_REGIONS:
-        fixed_features.append(feature)
-
-india_geo["features"] = fixed_features
+india_geo["features"] = filtered_features
 
 # =========================
-# FRAUD ENGINE (AI LOGIC)
+# FRAUD ENGINE
 # =========================
 data["fraud_risk_score"] = (
     0.4 * data["rush_index"] +
@@ -77,48 +69,35 @@ def classify_fraud(row):
 
 data["fraud_category"] = data.apply(classify_fraud, axis=1)
 
-data["recommended_action"] = data["fraud_category"].map({
-    "High-Risk Aadhaar Fraud": "Immediate biometric audit & UIDAI review",
-    "Possible Duplicate / Migration Fraud": "Cross-state Aadhaar linkage check",
-    "Digital Identity Misuse Risk": "Assisted Aadhaar update & awareness drive",
+action_map = {
+    "High-Risk Aadhaar Fraud": "Immediate biometric audit",
+    "Possible Duplicate / Migration Fraud": "Cross-state Aadhaar verification",
+    "Digital Identity Misuse Risk": "Local assisted update drive",
     "Normal": "No action required"
-})
+}
+data["recommended_action"] = data["fraud_category"].map(action_map)
 
 # =========================
-# KPI PANEL (FIXED COUNT)
+# KPI PANEL
 # =========================
-TOTAL_OFFICIAL_REGIONS = 36  # 28 States + 8 UTs
+c1, c2, c3, c4 = st.columns(4)
 
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Total States & UTs", TOTAL_OFFICIAL_REGIONS)
-k2.metric("High Fraud Risk Districts", (data["fraud_category"] == "High-Risk Aadhaar Fraud").sum())
-k3.metric("Migration Risk Districts", (data["fraud_category"] == "Possible Duplicate / Migration Fraud").sum())
-k4.metric("Digital Misuse Risk Districts", (data["fraud_category"] == "Digital Identity Misuse Risk").sum())
+c1.metric("Total States / UTs", len(state_map.values()))
+c2.metric("High Fraud Risk Districts", (data["fraud_category"] == "High-Risk Aadhaar Fraud").sum())
+c3.metric("Migration Risk Districts", (data["fraud_category"] == "Possible Duplicate / Migration Fraud").sum())
+c4.metric("Digital Misuse Risk Districts", (data["fraud_category"] == "Digital Identity Misuse Risk").sum())
 
 # =========================
 # STATE AGGREGATION
 # =========================
-state_data = (
-    data.groupby("state")[NUM_COLS]
-    .mean()
-    .reset_index()
-)
+state_data = data.groupby("state")[num_cols].mean().reset_index()
 
 # =========================
-# INDIA HEATMAP
+# INDIA MAP
 # =========================
 indicator = st.selectbox(
     "Select Indicator",
-    {
-        "rush_index": "Rush Index (Service Load)",
-        "digital_literacy_score": "Digital Literacy",
-        "migration_score": "Migration Index"
-    }.keys(),
-    format_func=lambda x: {
-        "rush_index": "Rush Index (Service Load)",
-        "digital_literacy_score": "Digital Literacy",
-        "migration_score": "Migration Index"
-    }[x]
+    ["rush_index", "digital_literacy_score", "migration_score"]
 )
 
 fig = px.choropleth(
@@ -128,36 +107,43 @@ fig = px.choropleth(
     locations="state",
     color=indicator,
     color_continuous_scale="RdYlGn_r",
-    title="India Aadhaar Intelligence Heatmap"
+    title="India Aadhaar Heatmap"
 )
 
 fig.update_geos(fitbounds="locations", visible=False)
-fig.update_layout(height=600, margin={"r":0,"t":50,"l":0,"b":0})
 st.plotly_chart(fig, width="stretch")
 
 # =========================
-# STATE LEVEL INDICATORS
+# STATE DRILLDOWN
 # =========================
 st.subheader("📊 State-Level Indicators")
 
-selected_state = st.selectbox(
-    "Select State",
-    sorted(state_data["state"].unique())
-)
-
+selected_state = st.selectbox("Select State", sorted(state_data["state"].unique()))
 state_row = state_data[state_data["state"] == selected_state].iloc[0]
 
-s1, s2, s3 = st.columns(3)
-s1.metric("Rush Index", round(state_row["rush_index"], 2))
-s2.metric("Migration Index", round(state_row["migration_score"], 2))
-s3.metric("Digital Literacy", round(state_row["digital_literacy_score"], 2))
+sc1, sc2, sc3 = st.columns(3)
+sc1.metric("Rush Index", round(state_row["rush_index"], 2))
+sc2.metric("Migration Index", round(state_row["migration_score"], 2))
+sc3.metric("Digital Literacy", round(state_row["digital_literacy_score"], 2))
 
 # =========================
-# DISTRICT FRAUD ANALYSIS
+# DISTRICT DRILLDOWN (✅ ADDED)
 # =========================
-st.subheader("🚨 District Fraud Analysis")
+st.subheader("📍 District-Level Indicators & Fraud Analysis")
 
 district_view = data[data["state"] == selected_state]
+
+selected_district = st.selectbox(
+    "Select District",
+    sorted(district_view["district"].unique())
+)
+
+district_row = district_view[district_view["district"] == selected_district].iloc[0]
+
+d1, d2, d3 = st.columns(3)
+d1.metric("District Rush Index", round(district_row["rush_index"], 2))
+d2.metric("District Migration Index", round(district_row["migration_score"], 2))
+d3.metric("District Digital Literacy", round(district_row["digital_literacy_score"], 2))
 
 st.dataframe(
     district_view[
@@ -167,11 +153,11 @@ st.dataframe(
 )
 
 # =========================
-# PDF REPORT GENERATOR
+# PDF REPORT
 # =========================
 def generate_fraud_report(df):
-    filename = f"UIDAI_Fraud_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-    c = canvas.Canvas(filename, pagesize=A4)
+    fname = f"UIDAI_Fraud_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    c = canvas.Canvas(fname, pagesize=A4)
     w, h = A4
     y = h - 40
 
@@ -183,11 +169,6 @@ def generate_fraud_report(df):
     c.drawString(40, y, f"Generated on: {datetime.now()}")
     y -= 30
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, "High-Risk Districts")
-    y -= 20
-
-    c.setFont("Helvetica", 9)
     for _, r in df[df["fraud_category"] != "Normal"].head(25).iterrows():
         c.drawString(
             40, y,
@@ -199,35 +180,12 @@ def generate_fraud_report(df):
             y = h - 40
 
     c.save()
-    return filename
+    return fname
 
-st.subheader("📄 Official UIDAI Fraud Report")
-
-if st.button("Generate PDF Fraud Report"):
-    pdf_file = generate_fraud_report(data)
-    with open(pdf_file, "rb") as f:
-        st.download_button(
-            "⬇️ Download Report",
-            f,
-            file_name=pdf_file,
-            mime="application/pdf"
-        )
-
-# =========================
-# EXPLAINABLE AI
-# =========================
-with st.expander("🧠 Explainable AI Logic"):
-    st.markdown("""
-**Fraud Risk Score Formula**
-
-0.4 × Rush Index  
-0.4 × Migration Index  
-0.2 × (1 − Digital Literacy)
-
-• No personal or biometric data used  
-• Fully UIDAI policy compliant  
-• Designed for national monitoring
-""")
+if st.button("📄 Generate UIDAI Fraud Report (PDF)"):
+    pdf = generate_fraud_report(data)
+    with open(pdf, "rb") as f:
+        st.download_button("⬇️ Download Report", f, file_name=pdf)
 
 # =========================
 # AUTO REFRESH
