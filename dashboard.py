@@ -3,71 +3,87 @@ import pandas as pd
 import plotly.express as px
 import json
 import time
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from state_mapper import state_map
 
-# =====================================================
+# =========================
 # PAGE CONFIG
-# =====================================================
+# =========================
 st.set_page_config(page_title="Aadhaar Pulse AI+", layout="wide")
-st.title("🇮🇳 Aadhaar Pulse AI+ — National Digital Identity Intelligence")
+st.title("🇮🇳 Aadhaar Pulse AI+ — National Fraud & Service Intelligence")
 
-# =====================================================
-# OFFICIAL STATES + UTS
-# =====================================================
-OFFICIAL_STATES_UTS = [
-    "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh",
-    "Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka",
-    "Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya",
-    "Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim",
-    "Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand",
-    "West Bengal",
-    "Delhi","Jammu and Kashmir","Ladakh","Puducherry",
-    "Chandigarh","Andaman and Nicobar Islands",
-    "Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"
-]
-
-# =====================================================
+# =========================
 # LOAD DATA
-# =====================================================
+# =========================
 data = pd.read_csv("Aadhaar_Intelligence_Indicators.csv")
 
-numeric_cols = ["rush_index", "digital_literacy_score", "migration_score"]
-for c in numeric_cols:
+num_cols = ["rush_index", "digital_literacy_score", "migration_score"]
+for c in num_cols:
     data[c] = pd.to_numeric(data[c], errors="coerce")
 
 # Normalize states (Odisha FIX applied here)
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
-# =====================================================
-# LOAD INDIA MAP
-# =====================================================
+# =========================
+# LOAD & FIX INDIA GEOJSON
+# =========================
 with open("india_states.geojson", "r", encoding="utf-8") as f:
     india_geo = json.load(f)
 
-# =====================================================
-# STATE AGGREGATION
-# =====================================================
-state_data = (
-    data.groupby("state")[numeric_cols]
-    .mean()
-    .reset_index()
+# 🔧 CRITICAL FIX: Orissa → Odisha in GeoJSON
+for feature in india_geo["features"]:
+    if feature["properties"]["NAME_1"] == "Orissa":
+        feature["properties"]["NAME_1"] = "Odisha"
+
+# =========================
+# FRAUD RISK ENGINE
+# =========================
+data["fraud_risk_score"] = (
+    0.4 * data["rush_index"] +
+    0.4 * data["migration_score"] +
+    0.2 * (1 - data["digital_literacy_score"])
 )
 
-state_data = state_data[state_data["state"].isin(OFFICIAL_STATES_UTS)]
+def classify_fraud(row):
+    if row["fraud_risk_score"] > data["fraud_risk_score"].quantile(0.9):
+        return "High-Risk Aadhaar Fraud"
+    elif row["migration_score"] > data["migration_score"].quantile(0.9):
+        return "Possible Duplicate / Migration Fraud"
+    elif row["digital_literacy_score"] < data["digital_literacy_score"].quantile(0.25):
+        return "Digital Identity Misuse Risk"
+    else:
+        return "Normal"
 
-# =====================================================
+data["fraud_category"] = data.apply(classify_fraud, axis=1)
+
+action_map = {
+    "High-Risk Aadhaar Fraud": "Immediate field audit & biometric re-verification",
+    "Possible Duplicate / Migration Fraud": "Cross-state Aadhaar linkage review",
+    "Digital Identity Misuse Risk": "Local Aadhaar awareness & assisted update drive",
+    "Normal": "No action required"
+}
+data["recommended_action"] = data["fraud_category"].map(action_map)
+
+# =========================
 # KPI PANEL
-# =====================================================
+# =========================
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("States / UTs", state_data["state"].nunique())
-c2.metric("High Rush States", (state_data["rush_index"] > state_data["rush_index"].quantile(0.9)).sum())
-c3.metric("Low Literacy States", (state_data["digital_literacy_score"] < state_data["digital_literacy_score"].quantile(0.25)).sum())
-c4.metric("Migration Hotspots", (state_data["migration_score"] > state_data["migration_score"].quantile(0.9)).sum())
+c1.metric("Total Districts", len(data))
+c2.metric("High Fraud Risk", (data["fraud_category"] == "High-Risk Aadhaar Fraud").sum())
+c3.metric("Migration Risk", (data["fraud_category"] == "Possible Duplicate / Migration Fraud").sum())
+c4.metric("Digital Misuse Risk", (data["fraud_category"] == "Digital Identity Misuse Risk").sum())
 
-# =====================================================
-# MAP
-# =====================================================
+# =========================
+# STATE AGGREGATION
+# =========================
+state_data = data.groupby("state")[num_cols].mean().reset_index()
+
+# =========================
+# INDIA HEATMAP
+# =========================
 indicator = st.selectbox(
     "Select Indicator",
     ["rush_index", "digital_literacy_score", "migration_score"]
@@ -82,67 +98,89 @@ fig = px.choropleth(
     color_continuous_scale="RdYlGn_r",
     title="India Aadhaar Heatmap"
 )
-
 fig.update_geos(fitbounds="locations", visible=False)
 st.plotly_chart(fig, width="stretch")
 
-# =====================================================
+# =========================
 # STATE → DISTRICT DRILLDOWN
-# =====================================================
-st.subheader("📍 District-Level Intelligence")
+# =========================
+st.subheader("📍 District Fraud Drilldown")
 
 selected_state = st.selectbox("Select State", sorted(state_data["state"].unique()))
-districts = data[data["state"] == selected_state]
+district_view = data[data["state"] == selected_state]
 
 st.dataframe(
-    districts[["district","rush_index","digital_literacy_score","migration_score"]]
-    .sort_values("rush_index", ascending=False),
+    district_view[
+        ["district","fraud_category","fraud_risk_score","recommended_action"]
+    ].sort_values("fraud_risk_score", ascending=False),
     use_container_width=True
 )
 
-# =====================================================
-# 🚨 FRAUD DETECTION ENGINE
-# =====================================================
-st.subheader("🚨 AI Fraud Alerts")
+# =========================
+# FRAUD ALERTS
+# =========================
+st.subheader("🚨 Live Fraud Alerts")
 
-update_abuse_thr = data["digital_literacy_score"].quantile(0.95)
-migration_anomaly_thr = data["migration_score"].quantile(0.99)
+alerts = district_view[district_view["fraud_category"] != "Normal"]
 
-fraud_df = districts[
-    (districts["digital_literacy_score"] > update_abuse_thr) |
-    (districts["migration_score"] > migration_anomaly_thr) |
-    (
-        (districts["rush_index"] > data["rush_index"].quantile(0.9)) &
-        (districts["digital_literacy_score"] < data["digital_literacy_score"].quantile(0.25))
-    )
-]
-
-if fraud_df.empty:
-    st.success("No major fraud patterns detected")
+if alerts.empty:
+    st.success("No critical fraud detected in this state.")
 else:
-    st.error("Potential Aadhaar misuse / fraud patterns detected")
-    st.dataframe(
-        fraud_df[["district","rush_index","digital_literacy_score","migration_score"]],
-        use_container_width=True
-    )
+    for _, r in alerts.head(5).iterrows():
+        st.error(
+            f"{r['district']} → {r['fraud_category']} | Action: {r['recommended_action']}"
+        )
 
-# =====================================================
-# EXPLAINABLE AI
-# =====================================================
-with st.expander("ℹ️ Explainable AI & Fraud Logic"):
-    st.markdown("""
-**Fraud Indicators Used**
+# =========================
+# PDF REPORT
+# =========================
+def generate_fraud_report(df):
+    fname = f"UIDAI_Fraud_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    c = canvas.Canvas(fname, pagesize=A4)
+    w, h = A4
+    y = h - 40
 
-• **Update Abuse** → Excessive updates compared to enrolments  
-• **Migration Spike** → Abnormal adult Aadhaar creation  
-• **Middlemen Pattern** → High rush + low literacy  
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, y, "UIDAI – Aadhaar Fraud Intelligence Report")
+    y -= 30
 
-⚠️ Dataset is anonymised — indicators flag *risk zones*, not individuals.
-""")
+    c.setFont("Helvetica", 10)
+    c.drawString(40, y, f"Generated on: {datetime.now()}")
+    y -= 30
 
-# =====================================================
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "High-Risk Districts")
+    y -= 20
+
+    c.setFont("Helvetica", 9)
+    for _, r in df[df["fraud_category"] != "Normal"].head(20).iterrows():
+        c.drawString(
+            40, y,
+            f"{r['state']} | {r['district']} | {r['fraud_category']} | Risk={r['fraud_risk_score']:.2f}"
+        )
+        y -= 12
+        if y < 80:
+            c.showPage()
+            y = h - 40
+
+    c.save()
+    return fname
+
+st.subheader("📄 Official UIDAI Fraud Report")
+
+if st.button("Generate PDF Fraud Report"):
+    pdf = generate_fraud_report(data)
+    with open(pdf, "rb") as f:
+        st.download_button(
+            "⬇️ Download Report",
+            f,
+            file_name=pdf,
+            mime="application/pdf"
+        )
+
+# =========================
 # AUTO REFRESH
-# =====================================================
+# =========================
 st.caption("🔄 Auto-refresh every 30 seconds")
 time.sleep(30)
 st.rerun()
