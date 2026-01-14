@@ -23,7 +23,7 @@ NUM_COLS = ["rush_index", "digital_literacy_score", "migration_score"]
 for c in NUM_COLS:
     data[c] = pd.to_numeric(data[c], errors="coerce")
 
-# Normalize states
+# Normalize state names
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
@@ -110,7 +110,6 @@ fig = px.choropleth(
     color_continuous_scale="RdYlGn_r",
     title="India Aadhaar Intelligence Heatmap"
 )
-
 fig.update_geos(fitbounds="locations", visible=False)
 st.plotly_chart(fig, width="stretch")
 
@@ -153,56 +152,80 @@ st.dataframe(
     use_container_width=True
 )
 
-# ==================================================
-# ✅ NEW: STATE-WISE BAR GRAPH (COUNTRY LEVEL)
-# ==================================================
-st.subheader("📊 State-wise Aadhaar Risk & Usage Comparison")
+# =====================================================
+# 🔵 NEW SECTION 1: NATIONAL STATE-WISE BAR GRAPH
+# =====================================================
+st.subheader("📊 National State-wise Indicator Comparison")
 
-state_bar = px.bar(
-    state_data.melt(
-        id_vars="state",
-        value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
-        var_name="Indicator",
-        value_name="Score"
-    ),
+state_bar = state_data.melt(
+    id_vars="state",
+    value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+    var_name="Indicator",
+    value_name="Value"
+)
+
+fig_state_bar = px.bar(
+    state_bar,
     x="state",
-    y="Score",
+    y="Value",
     color="Indicator",
-    barmode="group",
-    title="State-wise Rush, Migration, Literacy & Fraud Risk"
+    title="State-wise Aadhaar Pressure, Literacy, Migration & Fraud Risk",
+    barmode="group"
+)
+st.plotly_chart(fig_state_bar, use_container_width=True)
+
+# =====================================================
+# 🔵 NEW SECTION 2: DISTRICT-WISE BAR GRAPH
+# =====================================================
+st.subheader("📊 District-wise Risk Profile (Selected State)")
+
+district_bar = district_view.melt(
+    id_vars="district",
+    value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+    var_name="Indicator",
+    value_name="Value"
 )
 
-st.plotly_chart(state_bar, width="stretch")
-
-# ==================================================
-# ✅ NEW: DISTRICT-WISE BAR GRAPH (SELECTED STATE)
-# ==================================================
-st.subheader("📊 District-wise Indicators (Selected State)")
-
-district_bar = px.bar(
-    district_view.melt(
-        id_vars="district",
-        value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
-        var_name="Indicator",
-        value_name="Score"
-    ),
+fig_district_bar = px.bar(
+    district_bar,
     x="district",
-    y="Score",
+    y="Value",
     color="Indicator",
-    barmode="group",
-    title=f"{selected_state} — District-wise Aadhaar Indicators"
+    title=f"{selected_state} — District-wise Aadhaar Risk & Activity",
+    barmode="group"
 )
 
-st.plotly_chart(district_bar, width="stretch")
+st.plotly_chart(fig_district_bar, use_container_width=True)
 
-# =========================
-# 🧠 HOW AI WORKS
-# =========================
-with st.expander("🧠 How the AI Works (Explainable Intelligence)"):
+# =====================================================
+# 🧠 EXPLAINABLE AI
+# =====================================================
+with st.expander("🧠 How the AI Works (Explainable & Policy-Safe)"):
     st.markdown("""
-### 🔍 Core Indicators
-- **Rush Index** → Measures Aadhaar service load  
-- **Migration Index** → Detects adult population movement  
-- **Digital Literacy Score** → Ability to manage Aadhaar digitally  
+**Rush Index**  
+Measures Aadhaar service load.  
+Higher value → more enrolments & updates per active day.
 
-### 🚨 Fraud Risk Score
+**Migration Index**  
+Adult Aadhaar ÷ Child Aadhaar  
+Higher value → labour migration / urban influx.
+
+**Digital Literacy Score**  
+Updates ÷ Enrolments  
+Lower value → citizens struggle with digital updates.
+
+**Fraud Risk Score (Explainable AI)**  
+0.4 × Rush + 0.4 × Migration + 0.2 × (1 − Literacy)
+
+**Why this matters**  
+• No biometric or personal data used  
+• Fully explainable & policy compliant  
+• Supports UIDAI planning & fraud prevention
+""")
+
+# =========================
+# AUTO REFRESH
+# =========================
+st.caption("🔄 Auto-refresh every 30 seconds")
+time.sleep(30)
+st.rerun()
