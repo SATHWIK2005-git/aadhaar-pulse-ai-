@@ -5,9 +5,9 @@ import json
 import time
 from state_mapper import state_map
 
-# =========================
+# =====================================================
 # PAGE CONFIG
-# =========================
+# =====================================================
 st.set_page_config(
     page_title="Aadhaar Pulse AI+",
     layout="wide"
@@ -15,9 +15,24 @@ st.set_page_config(
 
 st.title("🇮🇳 Aadhaar Pulse AI+ — National Digital Identity Intelligence")
 
-# =========================
+# =====================================================
+# OFFICIAL INDIA STATES + UTS (CRITICAL FIX)
+# =====================================================
+OFFICIAL_STATES_UTS = [
+    "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh",
+    "Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka",
+    "Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya",
+    "Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim",
+    "Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand",
+    "West Bengal",
+    "Delhi","Jammu and Kashmir","Ladakh","Puducherry",
+    "Chandigarh","Andaman and Nicobar Islands",
+    "Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"
+]
+
+# =====================================================
 # LOAD DATA
-# =========================
+# =====================================================
 data = pd.read_csv("Aadhaar_Intelligence_Indicators.csv")
 
 # Safe numeric conversion
@@ -25,31 +40,34 @@ numeric_cols = ["rush_index", "digital_literacy_score", "migration_score"]
 for col in numeric_cols:
     data[col] = pd.to_numeric(data[col], errors="coerce")
 
-# Normalize state names (CRITICAL)
+# Normalize state names
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
-# =========================
-# LOAD INDIA GEOJSON
-# =========================
+# =====================================================
+# LOAD INDIA GEOJSON (NO CHANGE REQUIRED)
+# =====================================================
 with open("india_states.geojson", "r", encoding="utf-8") as f:
     india_geo = json.load(f)
 
-# =========================
-# AGGREGATE TO STATE LEVEL
-# =========================
+# =====================================================
+# AGGREGATE TO STATE LEVEL (FILTERED)
+# =====================================================
 state_data = (
     data.groupby("state")[numeric_cols]
     .mean()
     .reset_index()
 )
 
-# =========================
+# 🚨 CRITICAL FILTER — THIS FIXES 45 → 36 STATES
+state_data = state_data[state_data["state"].isin(OFFICIAL_STATES_UTS)]
+
+# =====================================================
 # KPI PANEL
-# =========================
+# =====================================================
 k1, k2, k3, k4 = st.columns(4)
 
-k1.metric("Total States", state_data["state"].nunique())
+k1.metric("Total States / UTs", state_data["state"].nunique())
 k2.metric(
     "High Rush States",
     (state_data["rush_index"] > state_data["rush_index"].quantile(0.9)).sum()
@@ -63,9 +81,9 @@ k4.metric(
     (state_data["migration_score"] > state_data["migration_score"].quantile(0.9)).sum()
 )
 
-# =========================
+# =====================================================
 # INDICATOR SELECTOR
-# =========================
+# =====================================================
 indicator = st.selectbox(
     "Select National Indicator",
     {
@@ -80,16 +98,16 @@ indicator = st.selectbox(
     }[x]
 )
 
-# =========================
-# INDIA STATE HEATMAP
-# =========================
+# =====================================================
+# INDIA STATE HEATMAP (CORRECTED)
+# =====================================================
 fig = px.choropleth(
     state_data,
     geojson=india_geo,
     featureidkey="properties.NAME_1",
     locations="state",
     color=indicator,
-    color_continuous_scale="RdYlGn_r",  # red = high pressure
+    color_continuous_scale="RdYlGn_r",
     title=f"India Aadhaar — {indicator.replace('_',' ').title()}",
 )
 
@@ -105,13 +123,13 @@ fig.update_layout(
 
 st.plotly_chart(fig, width="stretch")
 
-# =========================
-# STATE DRILLDOWN
-# =========================
-st.subheader("📍 State Drill-Down")
+# =====================================================
+# STATE → DISTRICT DRILL-DOWN (UNCHANGED, CORRECT)
+# =====================================================
+st.subheader("📍 State → District Drill-Down")
 
 selected_state = st.selectbox(
-    "Select State",
+    "Select State / UT",
     sorted(state_data["state"].unique())
 )
 
@@ -124,9 +142,9 @@ st.dataframe(
     use_container_width=True
 )
 
-# =========================
+# =====================================================
 # CONTEXT AI ENGINE
-# =========================
+# =====================================================
 st.subheader("🧠 AI Context Engine")
 
 r = district_data["rush_index"].mean()
@@ -136,15 +154,15 @@ m = district_data["migration_score"].mean()
 if r > state_data["rush_index"].quantile(0.8) and m > state_data["migration_score"].quantile(0.8):
     st.error("High Aadhaar rush likely due to labour migration or urban influx")
 elif r > state_data["rush_index"].quantile(0.8) and l > state_data["digital_literacy_score"].quantile(0.6):
-    st.warning("High Aadhaar activity driven by digital awareness / scheme drives")
+    st.warning("High Aadhaar activity driven by awareness or scheme drives")
 elif r < state_data["rush_index"].quantile(0.3) and l < state_data["digital_literacy_score"].quantile(0.3):
     st.info("Digital exclusion zone — targeted outreach required")
 else:
     st.success("Normal Aadhaar activity observed")
 
-# =========================
+# =====================================================
 # DATA QUALITY MONITOR
-# =========================
+# =====================================================
 st.subheader("📊 Data Quality Monitor")
 
 missing_pct = data.isnull().mean().mean() * 100
@@ -153,9 +171,9 @@ outlier_pct = (data["rush_index"] > data["rush_index"].quantile(0.99)).mean() * 
 st.write(f"• Missing Data: **{missing_pct:.2f}%**")
 st.write(f"• Extreme Outliers: **{outlier_pct:.2f}%**")
 
-# =========================
+# =====================================================
 # EXPLAINABLE AI
-# =========================
+# =====================================================
 with st.expander("ℹ️ Explainable AI — How indicators are computed"):
     st.markdown("""
 **Rush Index**  
@@ -173,9 +191,9 @@ Adult Aadhaar ÷ Child Aadhaar
 • High Migration → Workforce movement  
 """)
 
-# =========================
+# =====================================================
 # AUTO REFRESH (SAFE)
-# =========================
+# =====================================================
 st.caption("🔄 Auto-refresh every 30 seconds")
 time.sleep(30)
 st.rerun()
