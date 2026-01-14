@@ -80,7 +80,7 @@ data["recommended_action"] = data["fraud_category"].map({
 })
 
 # =========================
-# KPI PANEL (UNCHANGED)
+# KPI PANEL
 # =========================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total States & UTs", 36)
@@ -91,7 +91,7 @@ c4.metric("Digital Misuse Risk Districts", (data["fraud_category"] == "Digital I
 # =========================
 # STATE AGGREGATION
 # =========================
-state_data = data.groupby("state")[NUM_COLS].mean().reset_index()
+state_data = data.groupby("state")[NUM_COLS + ["fraud_risk_score"]].mean().reset_index()
 
 # =========================
 # INDIA MAP
@@ -115,7 +115,7 @@ fig.update_geos(fitbounds="locations", visible=False)
 st.plotly_chart(fig, width="stretch")
 
 # =========================
-# STATE LEVEL INDICATORS (UNCHANGED)
+# STATE LEVEL INDICATORS
 # =========================
 st.subheader("📊 State-Level Indicators")
 
@@ -132,7 +132,7 @@ sc2.metric("Migration Index", round(state_row["migration_score"], 2))
 sc3.metric("Digital Literacy", round(state_row["digital_literacy_score"], 2))
 
 # =========================
-# ✅ DISTRICT LEVEL INDICATORS (ADDED)
+# DISTRICT LEVEL TABLE
 # =========================
 st.subheader("🚨 District-Level Indicators & Fraud Analysis")
 
@@ -153,44 +153,56 @@ st.dataframe(
     use_container_width=True
 )
 
+# ==================================================
+# ✅ NEW: STATE-WISE BAR GRAPH (COUNTRY LEVEL)
+# ==================================================
+st.subheader("📊 State-wise Aadhaar Risk & Usage Comparison")
+
+state_bar = px.bar(
+    state_data.melt(
+        id_vars="state",
+        value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+        var_name="Indicator",
+        value_name="Score"
+    ),
+    x="state",
+    y="Score",
+    color="Indicator",
+    barmode="group",
+    title="State-wise Rush, Migration, Literacy & Fraud Risk"
+)
+
+st.plotly_chart(state_bar, width="stretch")
+
+# ==================================================
+# ✅ NEW: DISTRICT-WISE BAR GRAPH (SELECTED STATE)
+# ==================================================
+st.subheader("📊 District-wise Indicators (Selected State)")
+
+district_bar = px.bar(
+    district_view.melt(
+        id_vars="district",
+        value_vars=["rush_index", "migration_score", "digital_literacy_score", "fraud_risk_score"],
+        var_name="Indicator",
+        value_name="Score"
+    ),
+    x="district",
+    y="Score",
+    color="Indicator",
+    barmode="group",
+    title=f"{selected_state} — District-wise Aadhaar Indicators"
+)
+
+st.plotly_chart(district_bar, width="stretch")
+
 # =========================
-# PDF REPORT (UNCHANGED)
+# 🧠 HOW AI WORKS
 # =========================
-def generate_fraud_report(df):
-    fname = f"UIDAI_Fraud_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-    c = canvas.Canvas(fname, pagesize=A4)
-    w, h = A4
-    y = h - 40
+with st.expander("🧠 How the AI Works (Explainable Intelligence)"):
+    st.markdown("""
+### 🔍 Core Indicators
+- **Rush Index** → Measures Aadhaar service load  
+- **Migration Index** → Detects adult population movement  
+- **Digital Literacy Score** → Ability to manage Aadhaar digitally  
 
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(40, y, "UIDAI – Aadhaar Fraud Intelligence Report")
-    y -= 30
-
-    c.setFont("Helvetica", 10)
-    c.drawString(40, y, f"Generated on: {datetime.now()}")
-    y -= 30
-
-    for _, r in df[df["fraud_category"] != "Normal"].head(25).iterrows():
-        c.drawString(
-            40, y,
-            f"{r['state']} | {r['district']} | {r['fraud_category']} | Risk={r['fraud_risk_score']:.2f}"
-        )
-        y -= 12
-        if y < 80:
-            c.showPage()
-            y = h - 40
-
-    c.save()
-    return fname
-
-if st.button("📄 Generate UIDAI Fraud Report (PDF)"):
-    pdf = generate_fraud_report(data)
-    with open(pdf, "rb") as f:
-        st.download_button("⬇️ Download Report", f, file_name=pdf)
-
-# =========================
-# AUTO REFRESH
-# =========================
-st.caption("🔄 Auto-refresh every 30 seconds")
-time.sleep(30)
-st.rerun()
+### 🚨 Fraud Risk Score
