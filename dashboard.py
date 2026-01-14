@@ -8,15 +8,11 @@ from state_mapper import state_map
 # =====================================================
 # PAGE CONFIG
 # =====================================================
-st.set_page_config(
-    page_title="Aadhaar Pulse AI+",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Aadhaar Pulse AI+", layout="wide")
 st.title("🇮🇳 Aadhaar Pulse AI+ — National Digital Identity Intelligence")
 
 # =====================================================
-# OFFICIAL INDIA STATES + UTS (CRITICAL FIX)
+# OFFICIAL STATES + UTS
 # =====================================================
 OFFICIAL_STATES_UTS = [
     "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh",
@@ -35,23 +31,22 @@ OFFICIAL_STATES_UTS = [
 # =====================================================
 data = pd.read_csv("Aadhaar_Intelligence_Indicators.csv")
 
-# Safe numeric conversion
 numeric_cols = ["rush_index", "digital_literacy_score", "migration_score"]
-for col in numeric_cols:
-    data[col] = pd.to_numeric(data[col], errors="coerce")
+for c in numeric_cols:
+    data[c] = pd.to_numeric(data[c], errors="coerce")
 
-# Normalize state names
+# Normalize states (Odisha FIX applied here)
 data["state"] = data["state"].replace(state_map)
 data = data.dropna(subset=["state"])
 
 # =====================================================
-# LOAD INDIA GEOJSON (NO CHANGE REQUIRED)
+# LOAD INDIA MAP
 # =====================================================
 with open("india_states.geojson", "r", encoding="utf-8") as f:
     india_geo = json.load(f)
 
 # =====================================================
-# AGGREGATE TO STATE LEVEL (FILTERED)
+# STATE AGGREGATION
 # =====================================================
 state_data = (
     data.groupby("state")[numeric_cols]
@@ -59,48 +54,25 @@ state_data = (
     .reset_index()
 )
 
-# 🚨 CRITICAL FILTER — THIS FIXES 45 → 36 STATES
 state_data = state_data[state_data["state"].isin(OFFICIAL_STATES_UTS)]
 
 # =====================================================
 # KPI PANEL
 # =====================================================
-k1, k2, k3, k4 = st.columns(4)
-
-k1.metric("Total States / UTs", state_data["state"].nunique())
-k2.metric(
-    "High Rush States",
-    (state_data["rush_index"] > state_data["rush_index"].quantile(0.9)).sum()
-)
-k3.metric(
-    "Low Literacy States",
-    (state_data["digital_literacy_score"] < state_data["digital_literacy_score"].quantile(0.25)).sum()
-)
-k4.metric(
-    "Migration Hotspots",
-    (state_data["migration_score"] > state_data["migration_score"].quantile(0.9)).sum()
-)
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("States / UTs", state_data["state"].nunique())
+c2.metric("High Rush States", (state_data["rush_index"] > state_data["rush_index"].quantile(0.9)).sum())
+c3.metric("Low Literacy States", (state_data["digital_literacy_score"] < state_data["digital_literacy_score"].quantile(0.25)).sum())
+c4.metric("Migration Hotspots", (state_data["migration_score"] > state_data["migration_score"].quantile(0.9)).sum())
 
 # =====================================================
-# INDICATOR SELECTOR
+# MAP
 # =====================================================
 indicator = st.selectbox(
-    "Select National Indicator",
-    {
-        "rush_index": "Rush Index (Service Load)",
-        "digital_literacy_score": "Digital Literacy",
-        "migration_score": "Migration Index"
-    }.keys(),
-    format_func=lambda x: {
-        "rush_index": "Rush Index (Service Load)",
-        "digital_literacy_score": "Digital Literacy",
-        "migration_score": "Migration Index"
-    }[x]
+    "Select Indicator",
+    ["rush_index", "digital_literacy_score", "migration_score"]
 )
 
-# =====================================================
-# INDIA STATE HEATMAP (CORRECTED)
-# =====================================================
 fig = px.choropleth(
     state_data,
     geojson=india_geo,
@@ -108,91 +80,68 @@ fig = px.choropleth(
     locations="state",
     color=indicator,
     color_continuous_scale="RdYlGn_r",
-    title=f"India Aadhaar — {indicator.replace('_',' ').title()}",
+    title="India Aadhaar Heatmap"
 )
 
-fig.update_geos(
-    fitbounds="locations",
-    visible=False
-)
-
-fig.update_layout(
-    margin={"r":0,"t":50,"l":0,"b":0},
-    height=600
-)
-
+fig.update_geos(fitbounds="locations", visible=False)
 st.plotly_chart(fig, width="stretch")
 
 # =====================================================
-# STATE → DISTRICT DRILL-DOWN (UNCHANGED, CORRECT)
+# STATE → DISTRICT DRILLDOWN
 # =====================================================
-st.subheader("📍 State → District Drill-Down")
+st.subheader("📍 District-Level Intelligence")
 
-selected_state = st.selectbox(
-    "Select State / UT",
-    sorted(state_data["state"].unique())
-)
-
-district_data = data[data["state"] == selected_state]
+selected_state = st.selectbox("Select State", sorted(state_data["state"].unique()))
+districts = data[data["state"] == selected_state]
 
 st.dataframe(
-    district_data[
-        ["district", "rush_index", "digital_literacy_score", "migration_score"]
-    ].sort_values("rush_index", ascending=False),
+    districts[["district","rush_index","digital_literacy_score","migration_score"]]
+    .sort_values("rush_index", ascending=False),
     use_container_width=True
 )
 
 # =====================================================
-# CONTEXT AI ENGINE
+# 🚨 FRAUD DETECTION ENGINE
 # =====================================================
-st.subheader("🧠 AI Context Engine")
+st.subheader("🚨 AI Fraud Alerts")
 
-r = district_data["rush_index"].mean()
-l = district_data["digital_literacy_score"].mean()
-m = district_data["migration_score"].mean()
+update_abuse_thr = data["digital_literacy_score"].quantile(0.95)
+migration_anomaly_thr = data["migration_score"].quantile(0.99)
 
-if r > state_data["rush_index"].quantile(0.8) and m > state_data["migration_score"].quantile(0.8):
-    st.error("High Aadhaar rush likely due to labour migration or urban influx")
-elif r > state_data["rush_index"].quantile(0.8) and l > state_data["digital_literacy_score"].quantile(0.6):
-    st.warning("High Aadhaar activity driven by awareness or scheme drives")
-elif r < state_data["rush_index"].quantile(0.3) and l < state_data["digital_literacy_score"].quantile(0.3):
-    st.info("Digital exclusion zone — targeted outreach required")
+fraud_df = districts[
+    (districts["digital_literacy_score"] > update_abuse_thr) |
+    (districts["migration_score"] > migration_anomaly_thr) |
+    (
+        (districts["rush_index"] > data["rush_index"].quantile(0.9)) &
+        (districts["digital_literacy_score"] < data["digital_literacy_score"].quantile(0.25))
+    )
+]
+
+if fraud_df.empty:
+    st.success("No major fraud patterns detected")
 else:
-    st.success("Normal Aadhaar activity observed")
-
-# =====================================================
-# DATA QUALITY MONITOR
-# =====================================================
-st.subheader("📊 Data Quality Monitor")
-
-missing_pct = data.isnull().mean().mean() * 100
-outlier_pct = (data["rush_index"] > data["rush_index"].quantile(0.99)).mean() * 100
-
-st.write(f"• Missing Data: **{missing_pct:.2f}%**")
-st.write(f"• Extreme Outliers: **{outlier_pct:.2f}%**")
+    st.error("Potential Aadhaar misuse / fraud patterns detected")
+    st.dataframe(
+        fraud_df[["district","rush_index","digital_literacy_score","migration_score"]],
+        use_container_width=True
+    )
 
 # =====================================================
 # EXPLAINABLE AI
 # =====================================================
-with st.expander("ℹ️ Explainable AI — How indicators are computed"):
+with st.expander("ℹ️ Explainable AI & Fraud Logic"):
     st.markdown("""
-**Rush Index**  
-Aadhaar enrolments + updates per active service day  
+**Fraud Indicators Used**
 
-**Digital Literacy Score**  
-Updates ÷ Enrolments  
+• **Update Abuse** → Excessive updates compared to enrolments  
+• **Migration Spike** → Abnormal adult Aadhaar creation  
+• **Middlemen Pattern** → High rush + low literacy  
 
-**Migration Index**  
-Adult Aadhaar ÷ Child Aadhaar  
-
-**Interpretation**  
-• High Rush → Service overload  
-• Low Literacy → Digital exclusion  
-• High Migration → Workforce movement  
+⚠️ Dataset is anonymised — indicators flag *risk zones*, not individuals.
 """)
 
 # =====================================================
-# AUTO REFRESH (SAFE)
+# AUTO REFRESH
 # =====================================================
 st.caption("🔄 Auto-refresh every 30 seconds")
 time.sleep(30)
